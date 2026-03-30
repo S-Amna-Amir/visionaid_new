@@ -23,6 +23,16 @@ class ModelSelectionPage extends StatelessWidget {
             title: Text("Obstacle Detection Model"),
             onTap: () => Navigator.pushNamed(context, '/yolo10n'),
           ),
+
+          ListTile(
+            title: Text("Obstacle Detection Model"),
+            onTap: () => Navigator.pushNamed(context, '/best_yolo'),
+          ),
+
+          ListTile(
+            title: Text("Assistive Live"),
+            onTap: () => Navigator.pushNamed(context, '/assist_live'),
+          ),
         ],
       ),
     );

@@ -47,6 +47,7 @@ flutter:
     - assets/models/labels.txt
     - assets/images/logo.svg
     - assets/images/logo2.svg
+    - assets/models/best_yolov10n_custom_int8.tflite
 
   # Uncomment and adjust if you have other assets
   # - assets/

@@ -23,10 +23,23 @@ class ModelService {
   }
 
   // ── YOLO ──────────────────────────────────────────────────────────────────
-
-  Future<void> _loadYolo() async {
+  
+  Future<void> _loadYolo2() async {
     yoloInterpreter =
         await Interpreter.fromAsset('assets/models/yolov10n_float16.tflite');
+
+    final raw =
+        await rootBundle.loadString('assets/models/labels.txt');
+    yoloLabels = raw
+        .split('\n')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+  }
+  
+  Future<void> _loadYolo() async {
+    yoloInterpreter =
+        await Interpreter.fromAsset('assets/models/best_yolov10n_custom_int8.tflite');
 
     final raw =
         await rootBundle.loadString('assets/models/labels.txt');

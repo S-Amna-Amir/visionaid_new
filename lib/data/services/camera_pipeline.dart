@@ -9,7 +9,7 @@ class CameraPipeline {
     final cameras = await availableCameras();
     controller = CameraController(
       cameras.first,
-      ResolutionPreset.medium,
+      ResolutionPreset.low,
       enableAudio: false,
     );
 
