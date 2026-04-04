@@ -10,9 +10,6 @@ import '../../../data/services/model_service.dart';
 import '../../../data/services/tts_service.dart';
 import '../../../data/services/camera_pipeline.dart';
 
-// ─────────────────────────────────────────────────────────────
-//  Constants — kept in sync with teammate's models
-// ─────────────────────────────────────────────────────────────
 const int    _yoloInputSize = 320;
 const double _yoloConf      = 0.30;
 
@@ -37,9 +34,8 @@ class AssistiveLivePage extends StatefulWidget {
 class _AssistiveLivePageState extends State<AssistiveLivePage> {
   final _pipeline = CameraPipeline();
 
-  bool     _busy       = false;
-  String   _lastSpoken = '';
-  DateTime _lastRun    = DateTime.now();
+  bool   _busy        = false;
+  String _lastSpoken  = '';
 
   @override
   void initState() {
@@ -48,7 +44,7 @@ class _AssistiveLivePageState extends State<AssistiveLivePage> {
   }
 
   Future<void> _start() async {
-    // Models are already loaded by the splash screen just start the camera.
+    // Models are already loaded by the splash screen 
     await _pipeline.init(_processFrame);
     setState(() {});
   }
@@ -56,12 +52,8 @@ class _AssistiveLivePageState extends State<AssistiveLivePage> {
   // ── Main frame handler ───────────────────────────────────────
   Future<void> _processFrame(img.Image frame) async {
     if (_busy) return;
+    _busy = true;
 
-    final now = DateTime.now();
-    if (now.difference(_lastRun).inMilliseconds < 20000) return;
-    _lastRun = now;
-    _busy    = true;
-    debugPrint("time: 20000");
     try {
       // 1. Run YOLO (320×320 model)
       final detections = _runYolo(frame);
@@ -157,7 +149,7 @@ class _AssistiveLivePageState extends State<AssistiveLivePage> {
     return detections.take(10).toList();
   }
 
-  // ── Depth (teammate's ONNX model, 210×280 input) ─────────────
+  // ── Depth (ONNX model, 210×280 input) ─────────────
   Future<List<double>> _runDepth(img.Image depthImage) async {
     final session = ModelService.instance.onnxSession!;
 
