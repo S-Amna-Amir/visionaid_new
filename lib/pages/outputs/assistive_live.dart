@@ -171,6 +171,8 @@ class _AssistiveLivePageState extends State<AssistiveLivePage> {
       [1, 3, _depthH, _depthW],
     );
 
+    
+
     final outputs = await session.runAsync(OrtRunOptions(), {'input': tensor});
     tensor.release();
 
@@ -193,6 +195,11 @@ class _AssistiveLivePageState extends State<AssistiveLivePage> {
 
     return depthMap;
   }
+
+  int metersToSteps(double meters) {
+    const double avgStepMeters = 0.75;
+    return (meters / avgStepMeters).round();
+    }
 
   // ── Fuse YOLO boxes with depth map ───────────────────────────
   List<Map<String, dynamic>> _fuseDetectionsWithDepth(
@@ -252,16 +259,22 @@ class _AssistiveLivePageState extends State<AssistiveLivePage> {
 
     final parts = <String>[];
 
+
     for (final d in sorted.take(3)) {
       final classId = d['classId'] as int;
       final label   = (classId >= 0 && classId < labels.length)
           ? labels[classId]
           : 'object';
       final dist = (d['distanceMeters'] as double?) ?? -1;
+      final steps = metersToSteps(d['distanceMeters'] as double);
 
+      /*
       parts.add(dist > 0
           ? '$label, ${dist.toStringAsFixed(1)} meters ahead'
           : label);
+      */
+      // Added meters for testing, will remove for final app iA 
+      parts.add(dist > 0 ? '$label, ${steps.toStringAsFixed(1)} steps, ${steps.toStringAsFixed(1)} meters ahead' : label);
     }
 
     return '${parts.join('. ')}.';
