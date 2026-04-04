@@ -10,7 +10,8 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
-  String _status = 'Loading models…';
+  String _status = 'Starting up…';
+  bool _hasError = false;
 
   @override
   void initState() {
@@ -20,20 +21,27 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _init() async {
     try {
-      // Load both models concurrently while the splash is visible
-      await ModelService.instance.loadAll();
+      setState(() => _status = 'Loading obstacle detector…');
+      await ModelService.instance.loadYolo();
+
+      setState(() => _status = 'Loading depth estimator…');
+      await ModelService.instance.loadOnnx();
 
       if (!mounted) return;
       setState(() => _status = 'Ready!');
+      await Future.delayed(const Duration(milliseconds: 300));
     } catch (e) {
       if (!mounted) return;
-      setState(() => _status = 'Failed to load models:\n$e');
-      // Still navigate after a short pause so the user isn't stuck
-      await Future.delayed(const Duration(seconds: 3));
+      setState(() {
+        _hasError = true;
+        _status = 'Failed to load models:\n$e';
+      });
+      // Give the user time to read the error — do NOT navigate on failure.
+      return;
     }
 
     if (!mounted) return;
-    Navigator.pushNamed(context, '/pg1');
+    Navigator.pushReplacementNamed(context, '/pg1');
   }
 
   @override
@@ -54,7 +62,10 @@ class _SplashScreenState extends State<SplashScreen> {
             ),
           ),
           const SizedBox(height: 24),
-          const CircularProgressIndicator(color: Colors.white),
+          if (!_hasError)
+            const CircularProgressIndicator(color: Colors.white),
+          if (_hasError)
+            const Icon(Icons.error_outline, color: Colors.redAccent, size: 36),
           const SizedBox(height: 16),
           Center(
             child: Text(
@@ -63,6 +74,20 @@ class _SplashScreenState extends State<SplashScreen> {
               textAlign: TextAlign.center,
             ),
           ),
+          if (_hasError) ...[
+            const SizedBox(height: 24),
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  _hasError = false;
+                  _status = 'Retrying…';
+                });
+                _init();
+              },
+              child: const Text('Retry',
+                  style: TextStyle(color: Colors.white, fontSize: 16)),
+            ),
+          ],
         ],
       ),
     );
