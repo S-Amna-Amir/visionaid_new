@@ -14,25 +14,16 @@ class ModelSelectionPage extends StatelessWidget {
       body: ListView(
         padding: EdgeInsets.all(20),
         children: [
-          ListTile(
-            title: Text("Depth Estimation Model New"),
-            onTap: () => Navigator.pushNamed(context, '/onnx'),
-          ),
-          
-          ListTile(
-            title: Text("Obstacle Detection Model"),
-            onTap: () => Navigator.pushNamed(context, '/yolo10n'),
-          ),
-
-          ListTile(
-            title: Text("Obstacle Detection Model"),
-            onTap: () => Navigator.pushNamed(context, '/best_yolo'),
-          ),
 
           ListTile(
             title: Text("Assistive Live"),
             onTap: () => Navigator.pushNamed(context, '/assist_live'),
           ),
+
+          ListTile(
+            title: Text("Assistive Live Urdu"),
+            onTap: () => Navigator.pushNamed(context, 'assist_urdu'),
+          )
         ],
       ),
     );

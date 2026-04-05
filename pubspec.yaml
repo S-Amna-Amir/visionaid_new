@@ -1,5 +1,5 @@
 name: vision_aid
-description: "UniDepth ONNX inference app for depth estimation."
+description: "Obstacle depth estimation app for visually impaired"
 publish_to: 'none'
 
 version: 1.0.0+1
@@ -48,6 +48,7 @@ flutter:
     - assets/images/logo.svg
     - assets/images/logo2.svg
     - assets/models/best_yolov10n_custom_int8.tflite
+    - assets/models/labels_urdu.txt
 
   # Uncomment and adjust if you have other assets
   # - assets/

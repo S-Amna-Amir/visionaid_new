@@ -1,0 +1,8 @@
+Here's the nav route:
+splash [proceeding to detection page, camera will open, swipe to go back] [check if glasses connected, if yes proceed to glasses detection]
+continue directly to assistive live english [ instructions to point camera / glasses ahead]
+swipe right -> change language [assistive + default]
+swipe back to end app, swipe ahead to go back to assisitive with chosen language
+button for feedback
+
+

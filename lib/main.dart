@@ -5,17 +5,14 @@ import 'shared/colors.dart';
 import 'pages/splash/splash.dart';
 import 'pages/default/page1.dart';
 import 'pages/default/page1_urdu.dart';
-import 'pages/outputs/output_10n.dart';
 import 'pages/model_testing.dart';
 import 'pages/assistive/AssistivePage1.dart';
 import 'pages/assistive/assist_urdu1.dart';
-import 'pages/outputs/unidepth_page.dart';
 import 'pages/outputs/assistive_live.dart';
-import 'pages/outputs/output_10n2.dart';
+import 'pages/outputs/assistive_live_urdu.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await TtsService.instance.init();
   runApp(const MyApp());
 }
 
@@ -34,11 +31,9 @@ class MyApp extends StatelessWidget {
             '/splash': (context) => const SplashScreen(),
             '/pg1' : (context) => const HomePage2(),
             '/pg1_urdu': (context) => const HomePage2_Urdu(),
-            '/yolo10n' : (context) => const YoloV10Output(),
-            '/onnx': (context) => const UniDepthPage(),
             '/assist_live': (context) => const AssistiveLivePage(),
             '/modelSelectionPage': (context) => const ModelSelectionPage(),
-            '/best_yolo': (context) => const YoloPage(),
+            '/assist_urdu': (context) => const AssistiveLivePageUrdu(),
             '/instructions1': (context) => InstructionPage(
                 instructionText: "Welcome to Assistive Mode Tutorial. Tap once to pause or resume instructions. Swipe left to confirm your choices and continue. Swipe right to go back. ",
                 nextRoute: '/instructions2',

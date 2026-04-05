@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../shared/colors.dart';
 import '../../data/services/model_service.dart';
+import '../../data/services/tts_service.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -21,27 +22,49 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _init() async {
     try {
-      setState(() => _status = 'Loading obstacle detector…');
+      // ── Step 1: TTS first so every subsequent status can be spoken ──
+      await _setStatus('Preparing voices…');
+
+      await TtsService.instance.init(
+        onStatus: (msg) => _setStatus(msg, speak: false),
+        // sub-steps are shown on screen but not spoken (TTS not ready yet)
+      );
+
+      // TTS is now ready — announce that loading is continuing
+      await _setStatus(
+        'Voices ready. Loading obstacle detector…',
+        speak: true,
+      );
+
+      // ── Step 2: YOLO + labels ───────────────────────────────────
       await ModelService.instance.loadYolo();
+      await _setStatus('Loading depth estimator…', speak: true);
 
-      setState(() => _status = 'Loading depth estimator…');
+      // ── Step 3: ONNX depth model ────────────────────────────────
       await ModelService.instance.loadOnnx();
+      await _setStatus('Ready!', speak: true); // Display instructions here!
 
-      if (!mounted) return;
-      setState(() => _status = 'Ready!');
-      await Future.delayed(const Duration(milliseconds: 300));
+      await Future.delayed(const Duration(milliseconds: 400));
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _hasError = true;
-        _status = 'Failed to load models:\n$e';
+        _status = 'Failed to load:\n$e';
       });
-      // Give the user time to read the error — do NOT navigate on failure.
-      return;
+      await TtsService.instance
+          .speak('Loading failed. Please restart the app.');
+      return; // Do NOT navigate on failure
     }
 
     if (!mounted) return;
     Navigator.pushReplacementNamed(context, '/pg1');
+  }
+
+  /// Update the displayed status and optionally speak it.
+  Future<void> _setStatus(String msg, {bool speak = false}) async {
+    if (!mounted) return;
+    setState(() => _status = msg);
+    if (speak) await TtsService.instance.speak(msg);
   }
 
   @override
@@ -63,8 +86,8 @@ class _SplashScreenState extends State<SplashScreen> {
           ),
           const SizedBox(height: 24),
           if (!_hasError)
-            const CircularProgressIndicator(color: Colors.white),
-          if (_hasError)
+            const CircularProgressIndicator(color: Colors.white)
+          else
             const Icon(Icons.error_outline, color: Colors.redAccent, size: 36),
           const SizedBox(height: 16),
           Center(
@@ -84,8 +107,10 @@ class _SplashScreenState extends State<SplashScreen> {
                 });
                 _init();
               },
-              child: const Text('Retry',
-                  style: TextStyle(color: Colors.white, fontSize: 16)),
+              child: const Text(
+                'Retry',
+                style: TextStyle(color: Colors.white, fontSize: 16),
+              ),
             ),
           ],
         ],
