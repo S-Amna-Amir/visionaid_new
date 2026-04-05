@@ -1,4 +1,4 @@
-// lib/pages/assistive_live_page.dart
+// lib/pages/outputs/assistive_live.dart
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -18,11 +18,8 @@ const int    _depthW = 280;
 const List<double> _mean = [0.485, 0.456, 0.406];
 const List<double> _std  = [0.229, 0.224, 0.225];
 
-// Scale from YOLO-space (320×320) → depth-space (280×336)
-const double _scaleX = _depthW / _yoloInputSize; // 280/320
-const double _scaleY = _depthH / _yoloInputSize; // 336/320
-
-// ─────────────────────────────────────────────────────────────
+const double _scaleX = _depthW / _yoloInputSize;
+const double _scaleY = _depthH / _yoloInputSize;
 
 class AssistiveLivePage extends StatefulWidget {
   const AssistiveLivePage({super.key});
@@ -34,8 +31,14 @@ class AssistiveLivePage extends StatefulWidget {
 class _AssistiveLivePageState extends State<AssistiveLivePage> {
   final _pipeline = CameraPipeline();
 
-  bool   _busy        = false;
-  String _lastSpoken  = '';
+  bool   _busy       = false;
+  String _lastSpoken = '';
+
+  // ── Debug state ──────────────────────────────────────────────
+  List<Map<String, dynamic>> _lastFused = [];
+  int _yoloMs   = 0;
+  int _depthMs  = 0;
+  int _totalMs  = 0;
 
   @override
   void initState() {
@@ -44,32 +47,53 @@ class _AssistiveLivePageState extends State<AssistiveLivePage> {
   }
 
   Future<void> _start() async {
-    // Models are already loaded by the splash screen 
     await _pipeline.init(_processFrame);
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
-  // ── Main frame handler ───────────────────────────────────────
   Future<void> _processFrame(img.Image frame) async {
     if (_busy) return;
     _busy = true;
 
+    final totalWatch = Stopwatch()..start();
+
     try {
-      // 1. Run YOLO (320×320 model)
+      // 1. YOLO
+      final yoloWatch = Stopwatch()..start();
       final detections = _runYolo(frame);
+      yoloWatch.stop();
+
       debugPrint('YOLO detections: ${detections.length}');
 
-      if (detections.isEmpty) return;
+      if (detections.isEmpty) {
+        if (mounted) setState(() {
+          _lastFused = [];
+          _yoloMs  = yoloWatch.elapsedMilliseconds;
+          _depthMs = 0;
+          _totalMs = yoloWatch.elapsedMilliseconds;
+        });
+        return;
+      }
 
-      // 2. Run depth on a 210×280 resize of the frame
+      // 2. Depth
       final depthImage = img.copyResize(frame, width: _depthW, height: _depthH);
+      final depthWatch = Stopwatch()..start();
       final depthMap   = await _runDepth(depthImage);
-      debugPrint('Depth map length: ${depthMap.length}');
+      depthWatch.stop();
 
-      // 3. Fuse: scale YOLO boxes → depth-space, sample depth
+      // 3. Fuse
       final fused = _fuseDetectionsWithDepth(detections, depthMap);
 
-      // 4. Build TTS string and speak if changed
+      totalWatch.stop();
+
+      if (mounted) setState(() {
+        _lastFused = fused;
+        _yoloMs  = yoloWatch.elapsedMilliseconds;
+        _depthMs = depthWatch.elapsedMilliseconds;
+        _totalMs = totalWatch.elapsedMilliseconds;
+      });
+
+      // 4. Speak
       final speech = _buildSpeechString(fused);
       debugPrint('TTS: $speech');
 
@@ -84,7 +108,6 @@ class _AssistiveLivePageState extends State<AssistiveLivePage> {
     }
   }
 
-  // ── YOLO (320 input) ────────────────
   List<Map<String, dynamic>> _runYolo(img.Image image) {
     final interpreter = ModelService.instance.yoloInterpreter!;
 
@@ -95,7 +118,6 @@ class _AssistiveLivePageState extends State<AssistiveLivePage> {
       interpolation: img.Interpolation.linear,
     );
 
-    // Build [1, 320, 320, 3] input
     final input = List.generate(
       1,
       (_) => List.generate(
@@ -110,7 +132,6 @@ class _AssistiveLivePageState extends State<AssistiveLivePage> {
       ),
     );
 
-    // Output: [1, 300, 6] → [x1, y1, x2, y2, conf, classId] (normalised 0–1)
     final output = List.generate(
       1,
       (_) => List.generate(300, (_) => List.filled(6, 0.0)),
@@ -132,7 +153,6 @@ class _AssistiveLivePageState extends State<AssistiveLivePage> {
       if (x2 <= x1 || y2 <= y1) continue;
       if ((x2 - x1) < 0.01 || (y2 - y1) < 0.01) continue;
 
-      // Convert normalised → pixel coords in YOLO-space (320×320)
       detections.add({
         'x1':      x1 * _yoloInputSize,
         'y1':      y1 * _yoloInputSize,
@@ -149,7 +169,6 @@ class _AssistiveLivePageState extends State<AssistiveLivePage> {
     return detections.take(10).toList();
   }
 
-  // ── Depth (ONNX model, 210×280 input) ─────────────
   Future<List<double>> _runDepth(img.Image depthImage) async {
     final session = ModelService.instance.onnxSession!;
 
@@ -171,8 +190,6 @@ class _AssistiveLivePageState extends State<AssistiveLivePage> {
       [1, 3, _depthH, _depthW],
     );
 
-    
-
     final outputs = await session.runAsync(OrtRunOptions(), {'input': tensor});
     tensor.release();
 
@@ -189,31 +206,21 @@ class _AssistiveLivePageState extends State<AssistiveLivePage> {
       depthMap = (raw as List).cast<double>();
     }
 
-    for (final o in outputs) {
-      o?.release();
-    }
+    for (final o in outputs) o?.release();
 
     return depthMap;
   }
 
-  int metersToSteps(double meters) {
-    const double avgStepMeters = 0.75;
-    return (meters / avgStepMeters).round();
-    }
-
-  // ── Fuse YOLO boxes with depth map ───────────────────────────
   List<Map<String, dynamic>> _fuseDetectionsWithDepth(
     List<Map<String, dynamic>> detections,
     List<double> depthMap,
   ) {
     return detections.map((d) {
-      // Scale YOLO-space → depth-space
       int x1 = ((d['x1'] as double) * _scaleX).toInt().clamp(0, _depthW - 1);
       int y1 = ((d['y1'] as double) * _scaleY).toInt().clamp(0, _depthH - 1);
       int x2 = ((d['x2'] as double) * _scaleX).toInt().clamp(0, _depthW - 1);
       int y2 = ((d['y2'] as double) * _scaleY).toInt().clamp(0, _depthH - 1);
 
-      // Shrink 20% to reduce background contamination
       const shrink = 0.20;
       final bw = x2 - x1;
       final bh = y2 - y1;
@@ -234,7 +241,7 @@ class _AssistiveLivePageState extends State<AssistiveLivePage> {
         }
         if (values.isNotEmpty) {
           values.sort();
-          final pIdx = (0.15 * (values.length - 1)).round(); // 15th percentile
+          final pIdx = (0.15 * (values.length - 1)).round();
           dist = values[pIdx];
         }
       }
@@ -243,13 +250,10 @@ class _AssistiveLivePageState extends State<AssistiveLivePage> {
     }).toList();
   }
 
-  // ── Build spoken string ───────────────────────────────────────
-  // Format: "person, 1.5 meters ahead. car, 3.2 meters ahead."
-  // Sorted closest-first, capped at 3 objects to keep audio brief.
   String _buildSpeechString(List<Map<String, dynamic>> detections) {
     if (detections.isEmpty) return '';
 
-    final labels = ModelService.instance.yoloLabels; // ← loaded in splash
+    final labels = ModelService.instance.yoloLabels;
 
     final sorted = [...detections]..sort((a, b) {
         final da = (a['distanceMeters'] as double?) ?? double.infinity;
@@ -259,28 +263,24 @@ class _AssistiveLivePageState extends State<AssistiveLivePage> {
 
     final parts = <String>[];
 
-
     for (final d in sorted.take(3)) {
       final classId = d['classId'] as int;
       final label   = (classId >= 0 && classId < labels.length)
           ? labels[classId]
           : 'object';
-      final dist = (d['distanceMeters'] as double?) ?? -1;
-      final steps = metersToSteps(d['distanceMeters'] as double);
+      final dist  = (d['distanceMeters'] as double?) ?? -1;
+      final steps = _metersToSteps(dist);
 
-      /*
       parts.add(dist > 0
-          ? '$label, ${dist.toStringAsFixed(1)} meters ahead'
+          ? '$label, $steps steps, ${dist.toStringAsFixed(1)} meters ahead'
           : label);
-      */
-      // Added meters for testing, will remove for final app iA 
-      parts.add(dist > 0 ? '$label, ${steps.toStringAsFixed(1)} steps, ${steps.toStringAsFixed(1)} meters ahead' : label);
     }
 
     return '${parts.join('. ')}.';
   }
 
-  // ─────────────────────────────────────────────────────────────
+  int _metersToSteps(double meters) =>
+      (meters / 0.75).round();
 
   @override
   void dispose() {
@@ -296,8 +296,98 @@ class _AssistiveLivePageState extends State<AssistiveLivePage> {
         body: Center(child: CircularProgressIndicator()),
       );
     }
+
+    final labels = ModelService.instance.yoloLabels;
+
     return Scaffold(
-      body: CameraPreview(_pipeline.controller!),
+      body: Stack(
+        children: [
+          // ── Camera feed ─────────────────────────────────────
+          CameraPreview(_pipeline.controller!),
+
+          // ── Debug overlay -> remove this in prod!!! ────────────────────────────────────
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Container(
+              color: Colors.black.withOpacity(0.65),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Timing row
+                  Text(
+                    'YOLO: ${_yoloMs}ms   Depth: ${_depthMs}ms   Total: ${_totalMs}ms',
+                    style: const TextStyle(
+                      color: Colors.greenAccent,
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Divider(color: Colors.white24, height: 1),
+                  const SizedBox(height: 4),
+
+                  // Detection rows
+                  if (_lastFused.isEmpty)
+                    const Text(
+                      'No detections',
+                      style: TextStyle(color: Colors.white54, fontSize: 12),
+                    )
+                  else
+                    ..._lastFused.map((d) {
+                      final classId = d['classId'] as int;
+                      final label   = (classId >= 0 && classId < labels.length)
+                          ? labels[classId]
+                          : 'object';
+                      final conf  = ((d['conf'] as double) * 100).toStringAsFixed(1);
+                      final dist  = d['distanceMeters'] as double;
+                      final steps = _metersToSteps(dist);
+                      final distStr = dist > 0
+                          ? '${dist.toStringAsFixed(2)} m  (~$steps steps)'
+                          : 'depth N/A';
+
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          children: [
+                            // Confidence badge
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 5, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: Colors.green.shade700,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                '$conf%',
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                '$label  →  $distStr',
+                                style: const TextStyle(
+                                    color: Colors.white, fontSize: 12),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

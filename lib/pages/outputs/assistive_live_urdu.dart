@@ -19,8 +19,8 @@ const int    _urduDepthW = 280;
 const List<double> _urduMean = [0.485, 0.456, 0.406];
 const List<double> _urduStd  = [0.229, 0.224, 0.225];
 
-const double _urduScaleX = _urduDepthW / _urduYoloInputSize; // 280/320
-const double _urduScaleY = _urduDepthH / _urduYoloInputSize; // 336/320
+const double _urduScaleX = _urduDepthW / _urduYoloInputSize;
+const double _urduScaleY = _urduDepthH / _urduYoloInputSize;
 
 class AssistiveLivePageUrdu extends StatefulWidget {
   const AssistiveLivePageUrdu({super.key});
@@ -35,8 +35,13 @@ class _AssistiveLivePageUrduState extends State<AssistiveLivePageUrdu> {
   bool   _busy       = false;
   String _lastSpoken = '';
 
-  // Urdu labels loaded from assets/models/labels_urdu.txt
   List<String> _urduLabels = [];
+
+  // ── Debug state ──────────────────────────────────────────────
+  List<Map<String, dynamic>> _lastFused = [];
+  int _yoloMs  = 0;
+  int _depthMs = 0;
+  int _totalMs = 0;
 
   @override
   void initState() {
@@ -45,7 +50,6 @@ class _AssistiveLivePageUrduState extends State<AssistiveLivePageUrdu> {
   }
 
   Future<void> _start() async {
-    // Load Urdu labels from assets
     final raw = await rootBundle.loadString('assets/models/labels_urdu.txt');
     _urduLabels = raw
         .split('\n')
@@ -53,22 +57,33 @@ class _AssistiveLivePageUrduState extends State<AssistiveLivePageUrdu> {
         .where((e) => e.isNotEmpty)
         .toList();
 
-    // Models already loaded by splash screen
     await _pipeline.init(_processFrame);
     if (mounted) setState(() {});
   }
 
-  // ── Main frame handler ───────────────────────────────────────
   Future<void> _processFrame(img.Image frame) async {
     if (_busy) return;
     _busy = true;
 
+    final totalWatch = Stopwatch()..start();
+
     try {
       // 1. YOLO
+      final yoloWatch = Stopwatch()..start();
       final detections = _runYolo(frame);
+      yoloWatch.stop();
+
       debugPrint('YOLO detections (ur): ${detections.length}');
 
-      if (detections.isEmpty) return;
+      if (detections.isEmpty) {
+        if (mounted) setState(() {
+          _lastFused = [];
+          _yoloMs  = yoloWatch.elapsedMilliseconds;
+          _depthMs = 0;
+          _totalMs = yoloWatch.elapsedMilliseconds;
+        });
+        return;
+      }
 
       // 2. Depth
       final depthImage = img.copyResize(
@@ -76,10 +91,21 @@ class _AssistiveLivePageUrduState extends State<AssistiveLivePageUrdu> {
         width: _urduDepthW,
         height: _urduDepthH,
       );
-      final depthMap = await _runDepth(depthImage);
+      final depthWatch = Stopwatch()..start();
+      final depthMap   = await _runDepth(depthImage);
+      depthWatch.stop();
 
       // 3. Fuse
       final fused = _fuseDetectionsWithDepth(detections, depthMap);
+
+      totalWatch.stop();
+
+      if (mounted) setState(() {
+        _lastFused = fused;
+        _yoloMs  = yoloWatch.elapsedMilliseconds;
+        _depthMs = depthWatch.elapsedMilliseconds;
+        _totalMs = totalWatch.elapsedMilliseconds;
+      });
 
       // 4. Speak in Urdu
       final speech = _buildSpeechString(fused);
@@ -96,7 +122,6 @@ class _AssistiveLivePageUrduState extends State<AssistiveLivePageUrdu> {
     }
   }
 
-  // ── YOLO ────────────────────────────────────────────────────
   List<Map<String, dynamic>> _runYolo(img.Image image) {
     final interpreter = ModelService.instance.yoloInterpreter!;
 
@@ -158,7 +183,6 @@ class _AssistiveLivePageUrduState extends State<AssistiveLivePageUrdu> {
     return detections.take(10).toList();
   }
 
-  // ── Depth ────────────────────────────────────────────────────
   Future<List<double>> _runDepth(img.Image depthImage) async {
     final session = ModelService.instance.onnxSession!;
 
@@ -196,14 +220,11 @@ class _AssistiveLivePageUrduState extends State<AssistiveLivePageUrdu> {
       depthMap = (raw as List).cast<double>();
     }
 
-    for (final o in outputs) {
-      o?.release();
-    }
+    for (final o in outputs) o?.release();
 
     return depthMap;
   }
 
-  // ── Fuse ─────────────────────────────────────────────────────
   List<Map<String, dynamic>> _fuseDetectionsWithDepth(
     List<Map<String, dynamic>> detections,
     List<double> depthMap,
@@ -243,8 +264,6 @@ class _AssistiveLivePageUrduState extends State<AssistiveLivePageUrdu> {
     }).toList();
   }
 
-  // ── Build Urdu speech string ──────────────────────────────────
-  // Format: "شخص، 3 قدم آگے۔ گاڑی، 5 قدم آگے۔"
   String _buildSpeechString(List<Map<String, dynamic>> detections) {
     if (detections.isEmpty) return '';
 
@@ -264,21 +283,13 @@ class _AssistiveLivePageUrduState extends State<AssistiveLivePageUrdu> {
       final dist  = (d['distanceMeters'] as double?) ?? -1;
       final steps = _metersToSteps(dist);
 
-      parts.add(dist > 0
-          ? '$label، $steps قدم آگے'
-          : label);
+      parts.add(dist > 0 ? '$label، $steps قدم آگے' : label);
     }
 
-    // Urdu sentence ending with "۔"
     return '${parts.join('۔ ')}۔';
   }
 
-  int _metersToSteps(double meters) {
-    const double avgStepMeters = 0.75;
-    return (meters / avgStepMeters).round();
-  }
-
-  // ─────────────────────────────────────────────────────────────
+  int _metersToSteps(double meters) => (meters / 0.75).round();
 
   @override
   void dispose() {
@@ -294,8 +305,96 @@ class _AssistiveLivePageUrduState extends State<AssistiveLivePageUrdu> {
         body: Center(child: CircularProgressIndicator()),
       );
     }
+
     return Scaffold(
-      body: CameraPreview(_pipeline.controller!),
+      body: Stack(
+        children: [
+          // ── Camera feed ─────────────────────────────────────
+          CameraPreview(_pipeline.controller!),
+
+          // ── Debug overlay: REMOVE IN PROD! ────────────────────────────────────
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Container(
+              color: Colors.black.withOpacity(0.65),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Timing row — kept in English for readability during testing
+                  Text(
+                    'YOLO: ${_yoloMs}ms   Depth: ${_depthMs}ms   Total: ${_totalMs}ms',
+                    style: const TextStyle(
+                      color: Colors.greenAccent,
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Divider(color: Colors.white24, height: 1),
+                  const SizedBox(height: 4),
+
+                  // Detection rows
+                  if (_lastFused.isEmpty)
+                    const Text(
+                      'کوئی رکاوٹ نہیں ملی',
+                      style: TextStyle(color: Colors.white54, fontSize: 12),
+                    )
+                  else
+                    ..._lastFused.map((d) {
+                      final classId = d['classId'] as int;
+                      final label   = (classId >= 0 && classId < _urduLabels.length)
+                          ? _urduLabels[classId]
+                          : 'رکاوٹ';
+                      final conf    = ((d['conf'] as double) * 100).toStringAsFixed(1);
+                      final dist    = d['distanceMeters'] as double;
+                      final steps   = _metersToSteps(dist);
+                      final distStr = dist > 0
+                          ? '${dist.toStringAsFixed(2)} m  (~$steps قدم)'
+                          : 'فاصلہ دستیاب نہیں';
+
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 5, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: Colors.green.shade700,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                '$conf%',
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                '$label  ←  $distStr',
+                                style: const TextStyle(
+                                    color: Colors.white, fontSize: 12),
+                                overflow: TextOverflow.ellipsis,
+                                textDirection: TextDirection.rtl,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

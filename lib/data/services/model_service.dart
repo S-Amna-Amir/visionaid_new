@@ -11,6 +11,7 @@ class ModelService {
   Interpreter? yoloInterpreter;
   OrtSession?  onnxSession;
   List<String> yoloLabels = [];
+  List<String> yoloUrduLabels = [];
 
   bool get isReady => yoloInterpreter != null && onnxSession != null;
 
@@ -28,6 +29,8 @@ class ModelService {
         .map((e) => e.trim())
         .where((e) => e.isNotEmpty)
         .toList();
+    final raw_urdu = await rootBundle.loadString('assets/models/labels_urdu.txt');
+    yoloUrduLabels = raw_urdu.split('\n').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
   }
 
   // ── Depth ONNX ────────────────────────────────────────────────────────────

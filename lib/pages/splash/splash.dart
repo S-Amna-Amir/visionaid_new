@@ -42,7 +42,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
       // ── Step 3: ONNX depth model ────────────────────────────────
       await ModelService.instance.loadOnnx();
-      await _setStatus('Ready!', speak: true); // Display instructions here!
+      await _setStatus('You are about to proceed to detections. Swipe to return to options at any time.', speak: true); // Display instructions here!
 
       await Future.delayed(const Duration(milliseconds: 400));
     } catch (e) {

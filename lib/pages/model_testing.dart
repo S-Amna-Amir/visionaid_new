@@ -22,7 +22,7 @@ class ModelSelectionPage extends StatelessWidget {
 
           ListTile(
             title: Text("Assistive Live Urdu"),
-            onTap: () => Navigator.pushNamed(context, 'assist_urdu'),
+            onTap: () => Navigator.pushNamed(context, '/assist_urdu'),
           )
         ],
       ),
